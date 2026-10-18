@@ -8,6 +8,7 @@ import isObject, { isSchemaObject } from '../isObject.ts';
 import isPlainObject from '../isPlainObject.ts';
 import isWholeValueSelect from '../isWholeValueSelect.ts';
 import { getByPath, hasByPath } from '../pathUtils.ts';
+import setOwn from '../setOwn.ts';
 import type { FormContextType, GenericObjectType, RJSFSchema, SchemaContext, StrictRJSFSchema } from '../types.ts';
 import resolveConstantOptions from './resolveConstantOptions.ts';
 import retrieveSchema, { ownRefResolves } from './retrieveSchema.ts';
@@ -172,7 +173,7 @@ export default function sanitizeDataForNewSchema<
     if (oldProperties) {
       Object.keys(oldProperties).forEach((key) => {
         if (hasByPath(data, key)) {
-          removeOldSchemaData[key] = undefined;
+          setOwn(removeOldSchemaData, key, undefined);
         }
       });
     }
@@ -204,7 +205,7 @@ export default function sanitizeDataForNewSchema<
       const newSchemaTypeForKey = newKeyedSchema.type;
       // Check if the old option has the same key with the same type
       if (!oldSchemaTypeForKey || isSameType(oldSchemaTypeForKey, newSchemaTypeForKey)) {
-        if (key in removeOldSchemaData) {
+        if (Object.hasOwn(removeOldSchemaData, key)) {
           // SIDE-EFFECT: remove the undefined value for a key that has the same type between the old and new schemas
           delete removeOldSchemaData[key];
         }
@@ -239,7 +240,7 @@ export default function sanitizeDataForNewSchema<
               : emptyObjectFor<S>(newKeyedSchema);
           if (itemData !== undefined || isArrayValue) {
             // only put undefined values for the array type and not the object type
-            nestedData[key] = itemData;
+            setOwn(nestedData, key, itemData);
           }
         } else {
           // Ok, the non-object types match, let's make sure that a default or a const of a different value is replaced
@@ -250,10 +251,10 @@ export default function sanitizeDataForNewSchema<
           if (newOptionDefault !== NO_VALUE && !deepEquals(newOptionDefault, formValue)) {
             if ((isNewProperty && formValue === undefined) || deepEquals(oldOptionDefault, formValue)) {
               // Initialize a newly entered property or replace an old default with the new default.
-              removeOldSchemaData[key] = newOptionDefault;
+              setOwn(removeOldSchemaData, key, newOptionDefault);
             } else if (newKeyedSchema.readOnly === true) {
               // If the new schema has the default set to read-only, treat it like a const and remove the value
-              removeOldSchemaData[key] = undefined;
+              setOwn(removeOldSchemaData, key, undefined);
             }
           }
 
@@ -261,13 +262,13 @@ export default function sanitizeDataForNewSchema<
           const oldOptionConst = getByPath(oldKeyedSchema, CONST_KEY, NO_VALUE);
           if (newOptionConst !== NO_VALUE && !deepEquals(newOptionConst, formValue)) {
             // Since this is a const, if the old value matches, replace the value with the new const otherwise clear it
-            removeOldSchemaData[key] = deepEquals(oldOptionConst, formValue) ? newOptionConst : undefined;
+            setOwn(removeOldSchemaData, key, deepEquals(oldOptionConst, formValue) ? newOptionConst : undefined);
           }
 
           if (hasByPath(data, key)) {
             const enumReplacement = replacementForInvalidEnumValue(newKeyedSchema, formValue);
             if (enumReplacement !== NO_VALUE) {
-              removeOldSchemaData[key] = enumReplacement;
+              setOwn(removeOldSchemaData, key, enumReplacement);
             }
           }
         }
