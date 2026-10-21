@@ -223,15 +223,13 @@ const HELP_UI_OPTION = 'help';
 
 /**
  * Get the `uiSchema` the value field renders with: the caller's, without what the field around the value has already
- * rendered — the help among it, shadowed wherever it was written so that a `ui:globalOptions` one does not show through
- * — and with a `ui:widget`, its own or a `ui:globalOptions` one, shadowed when no widget implements it for the type
- * the selector is on. A widget named for one member of a union — `textarea` for its `string` — has no implementation
- * for the others, and `getWidget()` throws rather than falling back, which would take the whole form down as soon as
- * another type was selected. A widget registered under its own name is left alone since it is expected to handle
- * whatever it is given.
+ * rendered — the help among it, wherever it was written — and without its `ui:widget` when no widget implements it for
+ * the type the selector is on. A widget named for one member of a union — `textarea` for its `string` — has no
+ * implementation for the others, and `getWidget()` throws rather than falling back, which would take the whole form
+ * down as soon as another type was selected. A widget registered under its own name is left alone since it is expected
+ * to handle whatever it is given.
  * @param uiSchema - The uiSchema for the field being rendered.
- * @param keepsWidget - Whether a widget implements the `ui:widget`, its own or a `ui:globalOptions` one, for the type
- * the selector is on.
+ * @param keepsWidget - Whether a widget implements the `ui:widget` for the type the selector is on.
  * @param hidesLabel - Whether the field around the value labels it with no plan for the value field to read that from.
  */
 function getValueUiSchema<
@@ -246,12 +244,9 @@ function getValueUiSchema<
     delete valueUiSchema[UI_WIDGET_KEY];
   }
   const uiOptions = { ...valueUiSchema[UI_OPTIONS_KEY] } as UIOptionsType<T, S, F>;
-  // Set rather than deleted, since `getUiOptions()` layers the local options over `ui:globalOptions`, so removing the
-  // caller's own entry would leave a global `help` showing through
-  uiOptions[HELP_UI_OPTION] = undefined;
-  // Set rather than deleted, for the reason `help` is: a global `widget` would otherwise show through
+  delete uiOptions[HELP_UI_OPTION];
   if (!keepsWidget) {
-    uiOptions.widget = undefined;
+    delete uiOptions.widget;
   }
   // A field around the value that labels it labels the very same control, since the value field renders for the same
   // `id`, so a label here would be a second one pointing at it — read out as one run-on name, and both focusing the
@@ -363,21 +358,21 @@ function FallbackUiField<
     onChange,
     presentation,
   } = props;
-  const { translateString, fields, templates, widgets, globalFormOptions, globalUiOptions, schemaUtils } = registry;
+  const { translateString, fields, widgets, globalFormOptions, globalUiOptions, schemaUtils } = registry;
   const uiOptions = getUiOptions<T, S, F>(uiSchema);
   const types = useMemo(() => getFallbackTypes<S>(schema), [schema]);
   const defaultType = useMemo(
     () => getDefaultType<S>(schema, types, uiOptions.widget),
     [schema, types, uiOptions.widget],
   );
-  // Whether the value field keeps its widget, the field's own or a `ui:globalOptions` one, on a given type. Checked
-  // against the schema with its type pinned, which is all of the value schema `getWidget()` reads. The spread is what
-  // `getUiOptions(uiSchema, globalUiOptions)` returns, without reading the `uiSchema` a second time
-  const { widget: valueWidget, label }: UIOptionsType<T, S, F> = { ...globalUiOptions, ...uiOptions };
+  // What `getUiOptions(uiSchema, globalUiOptions)` returns for the label, without reading the `uiSchema` a second time
+  const { label } = { ...globalUiOptions, ...uiOptions };
+  // Whether the value field keeps its widget on a given type. Checked against the schema with its type pinned, which is
+  // all of the value schema `getWidget()` reads
   const keepsWidget = useCallback(
     (aType: JSONSchema7TypeName) =>
-      !valueWidget || hasWidget<T, S, F>({ ...schema, type: aType }, valueWidget, widgets),
-    [valueWidget, schema, widgets],
+      !uiOptions.widget || hasWidget<T, S, F>({ ...schema, type: aType }, uiOptions.widget, widgets),
+    [uiOptions.widget, schema, widgets],
   );
   const [selectedType, setSelectedType] = useState<JSONSchema7TypeName>(() =>
     getInitialType(formData, types, defaultType, keepsWidget),
@@ -421,24 +416,12 @@ function FallbackUiField<
   );
   // The selector is a control of its own within the field, so the `ui:options.label` that turns the field's own label
   // off turns the selector's off with it. Nothing else in the caller's `uiSchema` describes the selector — the rest of
-  // it describes the value — so that one option is all it is given. A `ui:globalOptions` entry does reach every field,
-  // and the selector is a `SchemaField` like any other, so `getUiOptions()` layers the globals under the options given
-  // here: a `field` naming this field would have each selector render another, a `help` would render the field's help
-  // text a second time under the DOM id the first copy's `aria-describedby` names, and a `title` or a `widget` would
-  // rename or replace a control the caller never wrote. Each such entry is shadowed, whatever it is named, except for
-  // one naming a template: a template says how any field renders rather than what this one holds, so a form-wide
-  // `FieldTemplate` lays the selector out as it lays out every other field
-  const typeSelectorUiSchema = useMemo(() => {
-    const options = Object.fromEntries(
-      Object.keys(globalUiOptions ?? {})
-        .filter((key) => !Object.hasOwn(templates, key))
-        .map((key) => [key, undefined]),
-    ) as UIOptionsType<T, S, F>;
-    if (uiBooleanOption(label) === false) {
-      options.label = false;
-    }
-    return { [UI_OPTIONS_KEY]: options };
-  }, [label, globalUiOptions, templates]);
+  // it describes the value — so that one option is all it is given. It is given either way, since the selector is a
+  // `SchemaField` that would otherwise read a `ui:globalOptions` label the field's own one beat
+  const typeSelectorUiSchema = useMemo(
+    () => ({ [UI_OPTIONS_KEY]: { label: uiBooleanOption(label) !== false } }),
+    [label],
+  );
 
   // Exactly one of the two fields renders the title: the outer one where a template's label names the value, which its
   // plan gives a control only where the value is one, and the value field otherwise, as where the theme declares the
@@ -466,8 +449,8 @@ function FallbackUiField<
   // One type is not a choice to be made, so the value field renders alone: without a control that can only be left as
   // it is, and without the template that lays that control out above it, whose wrapper would otherwise put a theme's
   // card or panel chrome and the gap meant for the control around an ordinary field. This arises whenever something
-  // other than the type sent the schema here — a `ui:field`, a `$id` or a `ui:globalOptions.field` naming this field —
-  // since a schema naming one type is otherwise rendered by the field for it
+  // other than the type sent the schema here — a `ui:field` or a `$id` naming this field — since a schema naming one
+  // type is otherwise rendered by the field for it
   if (!rendersTypeSelector<S>(schema)) {
     return valueField;
   }
