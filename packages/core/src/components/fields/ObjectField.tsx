@@ -17,6 +17,7 @@ import {
   getByPath,
   hasByPath,
   setByPath,
+  setOwn,
   ADDITIONAL_PROPERTIES_KEY,
   allowsAdditionalProperties,
   deepEquals,
@@ -747,7 +748,6 @@ export default function ObjectField<
         const newFormData: GenericObjectType = {
           ...(currentFormData as GenericObjectType),
         };
-        const newKeys: GenericObjectType = { [oldKey]: actualNewKey };
         // The seed the add button wrote was picked for a name the user had not picked yet, so a property still holding
         // it takes the one the schema describing its new name seeds instead: a `New Value` string left under a name a
         // numeric pattern describes is a value that pattern's field cannot show. Which properties those are is what
@@ -761,15 +761,14 @@ export default function ObjectField<
         const wasSeeded = seededProperties.current.has(oldKey) && deepEquals(newFormData[oldKey], seed);
         if (wasSeeded) {
           const newSeed = seedForKey(actualNewKey);
-          newFormData[oldKey] = newSeed;
+          setOwn(newFormData, oldKey, newSeed);
           seededProperties.current.set(actualNewKey, newSeed);
         }
-        const keyValues = Object.keys(newFormData).map((key) => {
-          // `Object.hasOwn` so a falsy rename target (e.g. `""`) isn't dropped.
-          const mappedKey = Object.hasOwn(newKeys, key) ? newKeys[key] : key;
-          return { [mappedKey]: newFormData[key] };
+        // Written through `setOwn()`, so a key named `__proto__` stays a property rather than the prototype
+        const renamedObj = {} as GenericObjectType & T;
+        Object.keys(newFormData).forEach((key) => {
+          setOwn(renamedObj, key === oldKey ? actualNewKey : key, newFormData[key]);
         });
-        const renamedObj = Object.assign({}, ...keyValues);
 
         // The errors the form holds under the old name describe the property, so they go to its new name with it
         sentFormData.current = renamedObj;
