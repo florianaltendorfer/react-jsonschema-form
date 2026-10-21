@@ -294,9 +294,10 @@ export function findChildrenAndProps<
 /** Computes the `rawSchema` and array `index` for a `schema` and a `potentialIndex`. If the `schema` is of type
  * array, has an `ITEMS_KEY` element and `potentialIndex` represents a numeric value, the element at `ITEMS_KEY` is
  * checked to see if it is an array. If it is AND the `potentialIndex`th element is available, it is used as the
- * `rawSchema`, otherwise the last value of the element is used. If it is not, then the element is used as the
- * `rawSchema`. In either case, the numeric `index` is returned so the caller can record the path segment as a number,
- * addressing an array element rather than an object key. If the `schema` does not represent an array or the
+ * `rawSchema`, otherwise the `additionalItems` schema is, as `ArrayField` renders the items past a tuple, or an
+ * empty schema where `additionalItems` isn't one. If the element is not an array, it is used as the `rawSchema`. In
+ * either case, the numeric `index` is returned so the caller can record the path segment as a number, addressing an
+ * array element rather than an object key. If the `schema` does not represent an array or the
  * `potentialIndex` is not a numeric value, then both are returned as undefined.
  *
  * @param schema - The schema to check for an array item schema
@@ -316,10 +317,10 @@ export function computeArraySchemasIfPresent<S extends StrictRJSFSchema = RJSFSc
     index = Number(potentialIndex);
     const items = schema[ITEMS_KEY];
     if (Array.isArray(items)) {
-      if (index > items.length) {
-        rawSchema = items.at(-1) as S;
-      } else {
+      if (index < items.length) {
         rawSchema = items[index] as S;
+      } else {
+        rawSchema = (isObject(schema.additionalItems) ? schema.additionalItems : {}) as S;
       }
     } else {
       rawSchema = items as S;

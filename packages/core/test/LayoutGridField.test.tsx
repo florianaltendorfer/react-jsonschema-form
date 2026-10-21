@@ -981,6 +981,26 @@ describe('LayoutGridField', () => {
         fieldPathToId(toFieldPath('0', FIELD_PATH), arraySchemaRegistry.globalFormOptions),
       );
     });
+    describe('a tuple', () => {
+      const first: RJSFSchema = { type: 'string' };
+      const second: RJSFSchema = { type: 'number' };
+      const additional: RJSFSchema = { type: 'boolean' };
+      const tuple: RJSFSchema = { type: 'array', items: [first, second], additionalItems: additional };
+
+      test('returns the item schema at an index the tuple covers', () => {
+        expect(computeArraySchemasIfPresent(tuple, '1')).toEqual({ rawSchema: second, index: 1 });
+      });
+      test.each(['2', '3'])('returns the additionalItems schema at index %s, past the tuple', (index) => {
+        expect(computeArraySchemasIfPresent(tuple, index)).toEqual({ rawSchema: additional, index: Number(index) });
+      });
+      test.each<[string, RJSFSchema]>([
+        ['has no additionalItems', { type: 'array', items: [first, second] }],
+        ['allows any additional item', { type: 'array', items: [first, second], additionalItems: true }],
+        ['allows no additional item', { type: 'array', items: [first, second], additionalItems: false }],
+      ])('returns an empty schema past a tuple that %s', (_, open) => {
+        expect(computeArraySchemasIfPresent(open, '3')).toEqual({ rawSchema: {}, index: 3 });
+      });
+    });
   });
   describe('getSchemaDetailsForField(), array items written as a $ref', () => {
     test('reads the options of an array item through the $ref of its items', () => {
@@ -1007,6 +1027,42 @@ describe('LayoutGridField', () => {
       expect(details.optionsInfo).toEqual({ options: expect.any(Array), hasDiscriminator: true });
       expect(details.optionsInfo?.options).toHaveLength(2);
       expect(details.isReadonly).toBe(true);
+    });
+  });
+  describe('getSchemaDetailsForField(), a tuple', () => {
+    const schema: RJSFSchema = {
+      type: 'object',
+      definitions: { Flag: { type: 'boolean', readOnly: true } },
+      properties: {
+        tuple: { type: 'array', items: [{ type: 'string' }], additionalItems: { $ref: '#/definitions/Flag' } },
+      },
+    };
+    test('reads the additionalItems schema, through its $ref, at an index past the tuple', () => {
+      const details = getSchemaDetailsForField(
+        getTestRegistry(schema),
+        'tuple.2',
+        schema,
+        { tuple: ['a', true, false] },
+        FIELD_PATH,
+      );
+      expect(details.schema).toMatchObject({ type: 'boolean', readOnly: true });
+      expect(details.isReadonly).toBe(true);
+      expect(fieldPathToList(details.fieldPath)).toEqual([DEFAULT_ID, 'tuple', 2]);
+    });
+    test('reads an empty schema at an index past a tuple without additionalItems', () => {
+      const closed: RJSFSchema = {
+        type: 'object',
+        properties: { tuple: { type: 'array', items: [{ type: 'string' }] } },
+      };
+      const details = getSchemaDetailsForField(
+        getTestRegistry(closed),
+        'tuple.1',
+        closed,
+        { tuple: ['a', 1] },
+        FIELD_PATH,
+      );
+      expect(details.schema).toEqual({});
+      expect(fieldPathToList(details.fieldPath)).toEqual([DEFAULT_ID, 'tuple', 1]);
     });
   });
   describe('getSchemaDetailsForField(), blank schema', () => {
